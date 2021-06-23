@@ -1,6 +1,9 @@
 package com.taosdata.example;
 
+import com.taosdata.jdbc.TSDBPreparedStatement;
 import java.sql.*;
+import java.util.Random;
+import java.util.ArrayList;
 import java.util.Properties;
 
 public class JdbcDemo {
@@ -9,7 +12,7 @@ public class JdbcDemo {
     private static final String tbName = "weather";
     private Connection connection;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws SQLException {
         for (int i = 0; i < args.length; i++) {
             if ("-host".equalsIgnoreCase(args[i]) && i < args.length - 1)
                 host = args[++i];
@@ -63,13 +66,90 @@ public class JdbcDemo {
     }
 
     private void createTable() {
-        final String sql = "create table if not exists " + dbName + "." + tbName + " (ts timestamp, temperature float, humidity int)";
-        exuete(sql);
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("create table if not exists " + dbName + "." + tbName + " (ts timestamp, ");
+        for(int i = 0; i < 20; i++) {
+            sb.append("i" + i + " int, ");
+        }
+        for(int i = 0; i < 20; i++) {
+            sb.append("d" + i + " double");
+            if(i != 19) {
+                sb.append(", ");
+            }else {
+                sb.append(")");
+            }
+        }
+        System.out.println(sb.toString());
+        exuete(sb.toString());
     }
 
-    private void insert() {
-        final String sql = "insert into  " + dbName + "." + tbName + " (ts, temperature, humidity) values(now, 20.5, 34)";
-        exuete(sql);
+    private void insert() {        
+        StringBuilder sb = new StringBuilder();
+        Random rand = new Random();
+        sb.append("insert into " + dbName + "." + tbName + " values");
+        for(int row = 0; row < 20; row++) {
+            sb.append("(now+" + row + "s,");
+            for(int i = 0; i < 20; i++) {
+                sb.append(rand.nextInt(1000) + ", ");
+            }
+            for(int i = 0; i < 20; i++) {
+                sb.append(rand.nextDouble());
+                if(i != 19) {
+                    sb.append(", ");
+                }
+            }
+            sb.append(")");
+            // System.out.println("insert sql is" + sb.toString());
+        }
+        exuete(sb.toString());
+    }
+
+    private void dataBindingInsert() throws SQLException {
+        TSDBPreparedStatement s = (TSDBPreparedStatement) connection.prepareStatement("insert into ? values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        s.setTableName(dbName + "." + tbName);
+        
+        int batches = 100;
+        Random rand = new Random();
+
+        for (int batch = 0; batch < batches; batch++) {
+
+            ArrayList<Long> ts = new ArrayList<Long>();
+            for (int i = 0; i < 60; i++) {
+                ts.add(System.currentTimeMillis() + batch * 60 + i);
+            }
+            s.setTimestamp(0, ts);
+
+            for(int i = 0; i < 20; i++) {
+
+                ArrayList<Integer> tmp = new ArrayList<>();
+                for(int j = 0; j < 60; j++) {
+                    tmp.add(rand.nextInt(100));
+                }
+                s.setInt(i, tmp);
+            }
+
+            for(int i = 20; i < 40; i++) {
+
+                ArrayList<Double> tmp = new ArrayList<>();
+                for(int j = 0; j < 60; j++) {
+                    tmp.add(rand.nextDouble());
+                }
+                s.setDouble(i, tmp);
+            }
+            
+            s.columnDataAddBatch();
+            long start = System.currentTimeMillis();
+            s.columnDataExecuteBatch();
+            long end = System.currentTimeMillis();
+
+            System.out.println("start:" + start + ", end: " + end + ", cost: " + (end - start));
+            s.columnDataCloseBatch();
+            
+        }
+
+        
+        
     }
 
     private void select() {
@@ -116,7 +196,7 @@ public class JdbcDemo {
 
 
     private void printSql(String sql, boolean succeed, long cost) {
-        System.out.println("[ " + (succeed ? "OK" : "ERROR!") + " ] time cost: " + cost + " ms, execute statement ====> " + sql);
+        System.out.println("[ " + (succeed ? "ERROR!" : "OK") + " ] time cost: " + cost + " ms");
     }
 
     private void exuete(String sql) {
